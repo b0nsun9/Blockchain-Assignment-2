@@ -16,14 +16,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     
     const idToken = await serverAuth.verifySessionCookie(jwt)
 
-    const uid = idToken.uid
-
-    const startId = uid.slice(0, 5)
-    const endId = uid.slice(-5)
-
     return {
       name: idToken.name,
-      uid: `${startId}...${endId}`
+      uid: idToken.uid
     }
 
   } catch (error) {
