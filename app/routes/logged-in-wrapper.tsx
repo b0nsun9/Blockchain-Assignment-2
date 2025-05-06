@@ -13,7 +13,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   try {
-    
+
     const idToken = await serverAuth.verifySessionCookie(jwt)
 
     return {
@@ -33,11 +33,13 @@ export default function LoggedInWapper({ loaderData }: Route.ComponentProps) {
       <div className="flex justify-between">
         <div className="flex flex-col">
           <p>Hello, {loaderData.name}</p>
-          <p>User ID: {loaderData.uid}</p>
         </div>
         <div>
           <Link to="/logout">Sign Out</Link>
         </div>
+      </div>
+      <div>
+        <p>User ID: {loaderData.uid}</p>
       </div>
       <Outlet />
     </div>
