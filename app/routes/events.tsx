@@ -1,90 +1,159 @@
 import type { Route } from "./+types/events"
-import { Link, redirect, type LoaderFunctionArgs } from "react-router"
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { onSnapshot, collection, type DocumentData, Timestamp, GeoPoint } from "firebase/firestore"
+import { database as clientDatabase } from "../.client/firebase.client"
+import type { AttendanceData as ClientAttendanceData } from "~/.client/block.client"
+import { session } from "~/cookies"
+import { redirect, useFetcher } from "react-router"
+import { auth as serverAuth } from "../.server/firebase.server"
+import { createBlockForAttendance } from "./createBlock"
+import type { Block as ClientBlock } from "../.client/block.client"
 
-export async function loader({ request }: LoaderFunctionArgs) {
-  
+export async function loader({ request }: Route.LoaderArgs) {
+
+  const jwt = await session.parse(request.headers.get("Cookie"))
+
+  if (!jwt) {
+    return redirect("/login")
+  }
+
+  try {
+
+    const idToken = await serverAuth.verifySessionCookie(jwt)
+
+    return {
+      uid: idToken.uid
+    }
+
+  } catch (error) {
+    console.error(error)
+    return redirect("/login")
+  }
 }
 
 export default function Events({ loaderData }: Route.ComponentProps) {
-  const [miningStatus, setMiningStatus] = useState<string>("Idle");
-  const [minedBlock, setMinedBlock] = useState<Block | null>(null);
-  const [isMining, setIsMining] = useState<boolean>(false);
 
-  const handleClick = async () => {
-    if (isMining) return; // Prevent multiple mining processes
-
-    setIsMining(true);
-    setMiningStatus("Mining...");
-    setMinedBlock(null);
-
-    const difficulty = 4; // Number of leading zeros required
-    const difficultyPrefix = "0".repeat(difficulty);
-
-    // --- Mining Logic ---
-    const blockData = `Block data for block #${minedBlock ? minedBlock.index + 1 : 0}`; // Example data
-    const previousHash = minedBlock ? minedBlock.hash : "0"; // Use last mined block's hash or "0" for genesis
-    const index = minedBlock ? minedBlock.index + 1 : 0;
-
-    let nonce = 0;
-    let timestamp = Date.now();
-    let hash = await calculateHash(index, previousHash, timestamp, blockData, nonce);
-
-    console.log(`Starting mining for block ${index} with difficulty ${difficulty}...`);
-
-    // Keep trying nonces until the hash meets the difficulty requirement
-    while (hash.substring(0, difficulty) !== difficultyPrefix) {
-      nonce++;
-      timestamp = Date.now(); // Update timestamp for each attempt? Optional.
-      hash = await calculateHash(index, previousHash, timestamp, blockData, nonce);
-
-      // Add a small delay to prevent freezing the browser UI during intense computation
-      if (nonce % 1000 === 0) {
-         setMiningStatus(`Mining... (Nonce: ${nonce}, Hash: ${hash.substring(0,10)}...)`);
-         await new Promise(resolve => setTimeout(resolve, 0)); // Yield to the event loop
+  const getCurrentLocation = (): Promise<GeolocationPosition> => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Geolocation is not supported by this browser."))
+        return
       }
-    }
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        maximumAge: 0
+      })
+    })
+  }
 
-    const newBlock: Block = {
-      index,
-      timestamp,
-      data: blockData,
-      previousHash,
-      nonce,
-      hash,
-    };
+  const [events, setEvents] = useState<DocumentData>([])
+  const [blockChain, setBlockChain] = useState<ClientBlock[]>()
 
-    console.log(`Block mined! Hash: ${hash}, Nonce: ${nonce}`);
-    setMinedBlock(newBlock);
-    setMiningStatus(`Mined Block ${newBlock.index}!`);
-    setIsMining(false);
-    // --- End Mining Logic ---
-  };
+  useEffect(() => {
+
+    const unsubscribe = onSnapshot(collection(clientDatabase, "blockchain"), (snapshot) => {
+
+      const events = snapshot.docs
+        .map((doc) => {
+          return doc.data()
+        })
+        .filter((doc) => {
+          return doc.eventData !== undefined
+        })
+        .sort((block1, block2) => {
+          return block2.index - block1.index
+        })
+
+      setEvents(events)
+
+      const blocks = snapshot.docs
+        .map((doc) => {
+          const data = doc.data()
+
+          const clientBlock: ClientBlock = {
+            index: data.index,
+            previousHash: data.previousHash,
+            timeStamp: data.timeStamp,
+            attendanceData: data.attendanceData,
+            eventData: data.eventData,
+            nonce: data.nonce,
+            hash: data.hash
+          }
+
+          return clientBlock
+        })
+        .sort((block1, block2) => {
+          return block1.index - block2.index
+        })
+
+
+      setBlockChain(blocks)
+
+    })
+
+    return () => unsubscribe()
+  }, [])
+
+  const [miningStatus, setMiningStatus] = useState<string>("Attend")
+  const [isMining, setIsMining] = useState<boolean>(false)
+
+  const fetcher = useFetcher()
+
+  const handleAttend = async (event: string) => {
+    setMiningStatus("Attending...")
+    setIsMining(true)
+
+    let location: GeoPoint
+
+    try {
+      const currentLocation = await getCurrentLocation()
+      location = new GeoPoint(currentLocation.coords.latitude, currentLocation.coords.longitude)
+
+      const attendanceData: ClientAttendanceData = {
+        timeStamp: Timestamp.now(),
+        location: location,
+        userId: loaderData.uid,
+        eventId: event
+      }
+
+      const newBlock = await createBlockForAttendance(attendanceData, blockChain?.pop())
+
+
+
+      const blockString = JSON.stringify(newBlock)
+
+      fetcher.submit({ blockString }, { method: "post", action: "/create" })
+    } catch { }
+
+    setIsMining(false)
+    setMiningStatus("Attend")
+
+  }
 
   return (
-    <div className="p-4 font-sans">
-      <h1 className="text-2xl mb-4">Simple Blockchain Miner</h1>
-      <div className="mb-4">
-        <button
-          onClick={handleClick}
-          disabled={isMining}
-          className={`px-4 py-2 rounded text-white ${
-            isMining ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-          }`}
-        >
-          {isMining ? "Mining..." : "Mine New Block"}
-        </button>
-        <p className="mt-2 text-sm text-gray-600">Status: {miningStatus}</p>
+    <div>
+      <div className="text-4xl">
+        Events
       </div>
-
-      {minedBlock && (
-        <div className="bg-gray-100 p-4 rounded shadow">
-          <h2 className="text-xl font-semibold mb-2">Last Mined Block</h2>
-          <pre className="text-xs overflow-auto">
-            {JSON.stringify(minedBlock, null, 2)}
-          </pre>
-        </div>
-      )}
+      <div className="flex flex-col gap-10 mt-10">
+        {
+          events.map((event: DocumentData) => (
+            <div key={event.hash} className="flex justify-between items-center gap-4">
+              <div>
+                {event.eventData.name}
+              </div>
+              <button
+                type="submit"
+                disabled={isMining}
+                className={`${isMining ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline`}
+                onClick={() => handleAttend(event.eventData.id)}
+              >
+                {miningStatus}
+              </button>
+            </div>
+          ))
+        }
+      </div>
     </div>
-  );
+  )
 }

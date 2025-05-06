@@ -1,13 +1,14 @@
-import { redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from "react-router"
+import type { Route } from "./+types/login"
+import { redirect } from "react-router"
 
 import { useFetcher } from "react-router"
 
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth"
-import { auth as clientAuth } from "../client/firebase.client"
-import { auth as serverAuth } from "../server/firebase.server"
+import { auth as clientAuth } from "../.client/firebase.client"
+import { auth as serverAuth } from "../.server/firebase.server"
 import { session } from "~/cookies"
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request }: Route.LoaderArgs) {
 
   const jwt = await session.parse(request.headers.get("Cookie"))
 
@@ -15,7 +16,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     try {
       await serverAuth.verifySessionCookie(jwt)
 
-      return redirect("/join")
+      return redirect("/events")
     } catch {
       return {}
     }
@@ -24,7 +25,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 }
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request }: Route.ActionArgs) {
   const form = await request.formData()
   const idToken = form.get("idToken")?.toString()
 
@@ -35,7 +36,7 @@ export async function action({ request }: ActionFunctionArgs) {
       expiresIn: 60 * 60 * 24 * 5 * 1000
     })
 
-    return redirect("/join", {
+    return redirect("/events", {
       headers: {
         "Set-Cookie": await session.serialize(jwt)
       }
@@ -56,7 +57,7 @@ export default function Login() {
 
       const credential = await signInWithPopup(clientAuth, provider)
       const idToken = await credential.user.getIdToken()
-      
+
       fetcher.submit({ idToken }, { method: "post", action: "/login" })
 
     } catch (error) {
@@ -66,7 +67,12 @@ export default function Login() {
 
   return (
     <div className='flex flex-col items-center justify-center h-screen'>
-      <button onClick={handleSignIn}>Sign in with Google</button>
+      <button
+        type="submit"
+        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+        onClick={handleSignIn}
+      >
+        Sign in with Google</button>
     </div>
   )
 }

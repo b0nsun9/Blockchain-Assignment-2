@@ -1,12 +1,10 @@
 import type { Route } from "./+types/logged-in-wrapper"
-import { Link, Outlet, redirect, useNavigate, type LoaderFunctionArgs } from "react-router"
+import { Link, Outlet, redirect } from "react-router"
 
 import { session } from "~/cookies"
-import { auth as serverAuth } from "../server/firebase.server"
+import { auth as serverAuth } from "../.server/firebase.server"
 
-export async function loader({ request }: LoaderFunctionArgs) {
-
-  console.log("logged in wrapper loader")
+export async function loader({ request }: Route.LoaderArgs) {
 
   const jwt = await session.parse(request.headers.get("Cookie"))
 
@@ -15,11 +13,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   try {
+    
     const idToken = await serverAuth.verifySessionCookie(jwt)
 
+    const uid = idToken.uid
+
+    const startId = uid.slice(0, 5)
+    const endId = uid.slice(-5)
+
     return {
-      name: idToken.name
+      name: idToken.name,
+      uid: `${startId}...${endId}`
     }
+
   } catch (error) {
     console.error(error)
     return redirect("/login")
@@ -27,12 +33,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export default function LoggedInWapper({ loaderData }: Route.ComponentProps) {
-
   return (
     <div className="m-10">
       <div className="flex justify-between">
-        <div>
+        <div className="flex flex-col">
           <p>Hello, {loaderData.name}</p>
+          <p>User ID: {loaderData.uid}</p>
         </div>
         <div>
           <Link to="/logout">Sign Out</Link>
