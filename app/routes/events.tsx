@@ -118,11 +118,10 @@ export default function Events({ loaderData }: Route.ComponentProps) {
 
       const newBlock = await createBlockForAttendance(attendanceData, blockChain?.pop())
 
-
-
       const blockString = JSON.stringify(newBlock)
 
       fetcher.submit({ blockString }, { method: "post", action: "/create" })
+
     } catch { }
 
     setIsMining(false)

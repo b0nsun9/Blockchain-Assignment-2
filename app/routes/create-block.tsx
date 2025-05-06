@@ -18,9 +18,5 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function CreateBlock() {
-  return (
-    <div>
-
-    </div>
-  )
+  return (<div></div>)
 }
